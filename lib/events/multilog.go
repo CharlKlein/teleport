@@ -26,10 +26,19 @@ import (
 )
 
 // NewMultiLog returns a new instance of a multi logger
-func NewMultiLog(loggers ...IAuditLog) *MultiLog {
-	return &MultiLog{
-		loggers: loggers,
+func NewMultiLog(loggers ...IAuditLog) (*MultiLog, error) {
+	emitters := make([]Emitter, len(loggers))
+	for i := range loggers {
+		emitter, ok := loggers[i].(Emitter)
+		if !ok {
+			return nil, trace.BadParameter("expected emitter, got %T", loggers[i])
+		}
+		emitters[i] = emitter
 	}
+	return &MultiLog{
+		MultiEmitter: NewMultiEmitter(emitters...),
+		loggers:      loggers,
+	}, nil
 }
 
 // MultiLog is a logger that fan outs write operations
@@ -37,6 +46,7 @@ func NewMultiLog(loggers ...IAuditLog) *MultiLog {
 // on the first logger that implements the operation
 type MultiLog struct {
 	loggers []IAuditLog
+	*MultiEmitter
 }
 
 // WaitForDelivery waits for resources to be released and outstanding requests to
@@ -45,7 +55,7 @@ func (m *MultiLog) WaitForDelivery(ctx context.Context) error {
 	return nil
 }
 
-// Closer releases connections and resources associated with logs if any
+// Close releases connections and resources associated with logs if any
 func (m *MultiLog) Close() error {
 	var errors []error
 	for _, log := range m.loggers {
